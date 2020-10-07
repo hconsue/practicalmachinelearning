@@ -1,0 +1,118 @@
+---
+title: "Use of accelerometers to predict personal activity"
+author: "Hernando Consuegra A."
+date: "10/6/2020"
+output: html_document
+---
+
+### 1. Abstract
+#### 1.1 Background
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+#### 1.2. Data
+The training data for this project are available here:
+
+  + https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+  + https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+#### 1.3. Objective
+The goal of the project is to predict the manner in which the participants did the exercise -this is the "classe" variable in the training set- using any of the other variables to predict with. This report describes how the model was built, how cross validation was used, what was the expected out of sample error, and why the choices were done. Finally, the prediction model build is used to predict 20 different test cases.
+
+### 2. Read and transform training data
+After reading the data from the web, the following transformations are done:
+
++ Discard the first 7 variables (columns) as they contain identification values for the data record: *X*, *user_name*, *raw_timestamp_part_1*, *raw_timestamp_part_2*,      *cvtd_timestamp*, *new_window*, and *num_window*.
++ Define *classe* as factor.
++ Discard the remaining predictors with proportion of NAs greater that 90%.
+
+```{r echo = TRUE, message = FALSE }
+
+library(caret)
+library(rpart)
+library(randomForest)
+library(readr)
+
+# Read training data
+pml.link <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+pml.data <- read.csv(pml.link, na.strings=c("NA","#DIV/0!", "", " "))
+
+# Discard non relevant predictors for model building and define 'classe' as factor
+m <- ncol(pml.data)
+pml.data <- pml.data[ , 8:m]
+pml.data$classe <- as.factor(pml.data$classe)
+
+# Use the predictors with the proportion of NAs smaller that 90%
+n <- nrow(pml.data)
+pml.data <-pml.data[,colSums(is.na(pml.data))/n <= .90]
+```
+
+### 3. Data partition for Cross validation
+The data is now partitioned into 2 data sets, one for training (70%) and one for testing (30%).
+
+```{r}
+set.seed(1234)
+inTrain <- createDataPartition(pml.data$classe, p = 0.7)[[1]]
+
+pml.train <- pml.data[inTrain, ]
+pml.test  <- pml.data[-inTrain, ]
+```
+
+### 4. Model selection
+#### 4.1 Decision tree
+The first model to explore is based on decision tree built with the function *rpart*. The *train* function of the *caret* package was tried but it required the use of PCA for predictors reduction and parallel processing in order to get reasonable response times. The results of these trials are not included to keep the length of the report between the limits. However, the results are very similar. For detail about *caret* performance, see [Caret Performance Analysis](https://rpubs.com/lgreski/improvingCaretPerformance) by Len Greski. 
+
+```{r}
+
+modelFit.tree <- rpart(classe ~ ., data=pml.train, method="class")
+pred.tree     <- predict(modelFit.tree, pml.test, type = "class")
+accurac.tree  <- confusionMatrix(pred.tree, pml.test$classe)$overall[1]
+accurac.tree
+```
+The **accuracy of the decision tree model** on the testing partition is **`r accurac.tree`**.
+
+#### 4.2 Random Forests
+
+The second model to explore is based on random forest built with the function *randomForest*. The same performance consideration explained above apply in this case.
+
+```{r}
+modelFit.forest <- randomForest(classe ~ ., data=pml.train, method="class")
+pred.forest     <- predict(modelFit.forest, pml.test, type = "class")
+accurac.forest  <- confusionMatrix(pred.forest, pml.test$classe)$overall[1]
+accurac.forest
+```
+
+The **accuracy of the random forest model** on the testing partition is **`r accurac.forest`**.
+
+#### 4.3 Selection based on accuracy
+Based on the accuracy of the models on the *training* partition, the **random forest model is selected**.
+
+
+#### 4.4 Expected out of sample error
+The expected out of sample error for the **random forest model** is equal to 1 minus its accuracy over the *testing* partition: **`r 1 - accurac.forest`**.
+
+
+### 5. Prediction based on the downloaded test data
+The selected model is used to predict the *classe* for the 20 samples in the downloaded testing data set.
+
+```{r}
+pml.link    <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+pml.testing <- read.csv(pml.link)
+
+pred.testing.forest <- predict(modelFit.forest, pml.testing)
+pred.testing.forest
+```
+
+### 6. Appendix 1 - Complete output of random forest model
+```{r}
+modelFit.forest
+```
+
+### 7. Appendix 2 - Confusion Matrix for random forest model on training set
+```{r}
+confusionMatrix(pred.forest, pml.test$classe)
+```
